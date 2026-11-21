@@ -6,11 +6,11 @@
 #   LIGHT=1 bash clash_check_nodes.sh      # 轻量版（测 opencode.ai 上的小文件）
 #   GROUP=你的组名 bash clash_check_nodes.sh
 #
-# 依赖 ~/.config/clash_auto.json 里的 group，或 GROUP 环境变量
+# 依赖与本脚本同目录的 clash_auto.json（或 CLASH_AUTO_CONF），也支持 GROUP 环境变量
 set -uo pipefail
 
 CLASH_CFG="${CLASH_CONFIG:-$HOME/.local/share/com.follow.clash/config.yaml}"
-AUTO_CFG="${CLASH_AUTO_CONF:-$HOME/.config/clash_auto.json}"
+AUTO_CFG="${CLASH_AUTO_CONF:-$(dirname "$(readlink -f "$0")")/clash_auto.json}"
 
 [ -f "$CLASH_CFG" ] || { echo "找不到 $CLASH_CFG"; exit 1; }
 
@@ -21,7 +21,7 @@ API="http://$PORT"
 if [ -z "${GROUP:-}" ] && [ -f "$AUTO_CFG" ]; then
   GROUP=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('group') or '')" "$AUTO_CFG" 2>/dev/null)
 fi
-[ -n "${GROUP:-}" ] || { echo '未配置代理组名：设置 ~/.config/clash_auto.json 的 "group" 或用 GROUP=xxx'; exit 1; }
+[ -n "${GROUP:-}" ] || { echo '未配置代理组名：在 clash_auto.json 里设置 "group"，或用 GROUP=xxx'; exit 1; }
 
 if [ "${LIGHT:-0}" = "1" ]; then
   TARGET="https://opencode.ai/robots.txt"

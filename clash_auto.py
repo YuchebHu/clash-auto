@@ -10,7 +10,7 @@
   3. 切换失败或全部超时 → 保持原状并记日志，不乱切
 
 依赖 Clash 的 External Controller（HTTP API）。
-配置文件：~/.config/clash_auto.json
+配置文件：与本脚本同目录的 clash_auto.json
   {
     "controller": "127.0.0.1:9090",
     "secret": "xxx",
@@ -36,7 +36,8 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-CONF = os.path.expanduser("~/.config/clash_auto.json")
+CONF = os.environ.get("CLASH_AUTO_CONF") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "clash_auto.json")
 LOG = os.path.expanduser("~/.local/state/clash_auto.log")
 
 DEFAULTS = {
@@ -211,7 +212,7 @@ def main():
     api = Api(conf)
     group = conf["group"]
     if not group:
-        log('未配置代理组名：请在 ~/.config/clash_auto.json 里设置 "group"')
+        log('未配置代理组名：请在 clash_auto.json 里设置 "group"（见 clash_auto.example.json）')
         return 2
 
     try:

@@ -35,14 +35,12 @@ Clash 界面上那个毫秒数来自 `http://www.gstatic.com/generate_204` 的�
 git clone <this-repo> ~/codes/clash-auto
 cd ~/codes/clash-auto
 
-mkdir -p .
-cp clash_auto.py opencode_panel.py opencode_panel_start.sh clash_check_nodes.sh ./
-chmod +x ./*.sh
-
-mkdir -p ~/.config
-cp examples/clash_auto.example.json ~/.config/clash_auto.json
-$EDITOR ~/.config/clash_auto.json     # 至少填 group
+cp clash_auto.example.json clash_auto.json
+$EDITOR clash_auto.json          # 至少填 group
+chmod +x *.sh
 ```
+
+脚本按自身所在目录找 `clash_auto.json`，所以仓库放在哪都行，不需要拷到别处。
 
 ### 关于 secret
 
@@ -60,7 +58,7 @@ export CLASH_CONFIG=/path/to/config.yaml
 
 ## 配置说明
 
-`~/.config/clash_auto.json`（完整示例见 `examples/`）：
+与本脚本同目录的 `clash_auto.json`（示例见 `clash_auto.example.json`，已加入 `.gitignore`）：
 
 | 键 | 默认 | 说明 |
 |---|---|---|

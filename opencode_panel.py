@@ -17,8 +17,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CFG = os.environ.get("CLASH_CONFIG") or os.path.expanduser(
     "~/.local/share/com.follow.clash/config.yaml")
-AUTO_CONF = os.environ.get("CLASH_AUTO_CONF") or os.path.expanduser(
-    "~/.config/clash_auto.json")
+AUTO_CONF = os.environ.get("CLASH_AUTO_CONF") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "clash_auto.json")
 
 
 def _read_group():
@@ -82,7 +82,7 @@ def scan():
     try:
         if not GROUP:
             raise RuntimeError(
-                '未配置代理组名：请在 ~/.config/clash_auto.json 里设置 "group"')
+                '未配置代理组名：请在 clash_auto.json 里设置 "group"')
         d = api("/proxies")["proxies"]
         nodes = [n for n in d[GROUP]["all"]
                  if d.get(n, {}).get("type") not in SKIP_TYPE]
