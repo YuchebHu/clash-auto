@@ -92,6 +92,19 @@ bash ./clash_check_nodes.sh
 python3 ./opencode_panel.py
 ```
 
+## 开机自启（可选）
+
+面板是个常驻进程。GNOME 下用 `opencode-check.desktop.example` 建一个 autostart 项：
+
+```bash
+mkdir -p ~/.config/autostart
+cp opencode-check.desktop.example ~/.config/autostart/opencode-check.desktop
+sed -i "s#/path/to/opencode_panel_start.sh#$PWD/opencode_panel_start.sh#" \
+  ~/.config/autostart/opencode-check.desktop
+```
+
+启动包装脚本会先睡 10 秒，等客户端的 API 起来再开始扫描，避免开机时第一轮报「连不上」。
+
 ## 定时运行
 
 ```cron
