@@ -1,0 +1,21 @@
+{
+  "controller": "127.0.0.1:9090",
+  "secret": "",
+  "group": "",
+  "test_url": "http://www.gstatic.com/generate_204",
+  "timeout_ms": 3000,
+  "workers": 12,
+  "max_delay_ms": 500,
+  "prefer_multiplier": 0.1,
+  "prefer_speed": true,
+  "proxy_addr": "http://127.0.0.1:7890",
+  "speed_url": "https://speed.cloudflare.com/__down?bytes=262144",
+  "speed_bytes": 262144,
+  "speed_timeout_ms": 8000,
+  "speed_top": 5,
+  "speed_enough_bps": 0,
+  "require_opencode": true,
+  "opencode_url": "https://models.opencode.ai/experimental/v2.0/api.json",
+  "opencode_timeout_ms": 8000,
+  "opencode_fallback": true
+}

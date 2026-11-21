@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=opencode 节点检测
+Comment=本地网页面板，检测每个代理节点能否正常访问 opencode
+# 改成你放置脚本的绝对路径
+Exec=/path/to/opencode_panel_start.sh
+Icon=utilities-system-monitor
+Terminal=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true

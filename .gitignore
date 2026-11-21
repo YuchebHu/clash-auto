@@ -1,0 +1,13 @@
+# 本地配置，含组名/密钥，绝不入库
+clash_auto.json
+config.local.json
+
+# 运行产物
+*.log
+__pycache__/
+*.pyc
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
