@@ -21,6 +21,7 @@ Clash 界面上那个毫秒数来自 `http://www.gstatic.com/generate_204` 的�
 | `clash_auto.py` | 核心。按计划任务运行，**只在当前节点真的失效时才**全量测速并切换 |
 | `opencode_panel.py` | 本地网页面板，`ping` / `opencode` 两栏并排，支持一键切换、自动刷新 |
 | `clash_check_nodes.sh` | 命令行版一次性全量检测，出问题时快速排查 |
+| `clash_fix_profile.sh` | 订阅更新后，把 `sniffer` 和 `GEOSITE,cn` 重新打进订阅配置（见文末） |
 
 ## 依赖
 
@@ -118,8 +119,24 @@ python3 ./opencode_panel.py
 
 重试机制是必要的：这类探测会假失败，同一个节点可能在几秒内两次结果相反，直接判死会导致无意义的频繁切换。
 
-## 关于 `/proxies/{name}/delay`
+## 订阅更新后：clash_fix_profile.sh
 
+订阅一更新，`profiles/*.yaml` 会被机场的新配置整个覆盖，手动加的 `sniffer` 和 `GEOSITE,cn` 就没了。这个脚本把它们重新打回去：
+
+```bash
+bash clash_fix_profile.sh                  # 自动找 profiles 下最新的 .yaml
+bash clash_fix_profile.sh /path/to.yaml    # 指定文件
+SKIP_RESTART=1 bash clash_fix_profile.sh   # 只改文件，不重启客户端
+```
+
+两处改动各自解决什么：
+
+- `sniffer.enable: true` —— 不嗅探时，自带 DoH 的程序（Chrome / Edge / Node 应用）拿到的是真实 IP，Clash 只有 IP 没有域名，所有 `DOMAIN-*` 规则失效，只能落到 `GEOIP` / `MATCH`
+- `GEOSITE,cn,DIRECT` —— 插在 `GEOIP,CN` 之前，补上 `.com` 结尾的国内站点
+
+脚本是幂等的，重复运行不会重复插入。更彻底的做法是关掉订阅自动更新，只在需要时手动更新，然后跑一次这个脚本。
+
+## 关于 `/proxies/{name}/delay`
 所有探测都走 mihomo 的这个接口，它会**从指定节点真实发起一次 HTTP(S) 请求**，返回往返毫秒数。
 
 一个实测细节：它只读响应头，不下载 body。所以哪怕拿 12MB 的 JSON 当探针，单次也只有 0.2s 左右，不会吃流量。
