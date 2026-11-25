@@ -17,5 +17,7 @@
   "require_opencode": true,
   "opencode_url": "https://models.opencode.ai/experimental/v2.0/api.json",
   "opencode_timeout_ms": 8000,
-  "opencode_fallback": true
+  "max_opencode_ms": 1500,
+  "opencode_fallback": true,
+  "switch_cooldown_ms": 600000
 }

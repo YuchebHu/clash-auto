@@ -1,0 +1,13 @@
+[Unit]
+Description=opencode 节点检测面板 (localhost:8765)
+After=network-online.target
+
+[Service]
+Type=simple
+# 改成你放置脚本的绝对路径
+ExecStart=/path/to/opencode_panel_start.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

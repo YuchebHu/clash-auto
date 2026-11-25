@@ -39,6 +39,7 @@ from concurrent.futures import ThreadPoolExecutor
 CONF = os.environ.get("CLASH_AUTO_CONF") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "clash_auto.json")
 LOG = os.path.expanduser("~/.local/state/clash_auto.log")
+STATE = os.path.expanduser("~/.local/state/clash_auto.state.json")
 
 DEFAULTS = {
     "controller": "127.0.0.1:9090",
@@ -65,8 +66,13 @@ DEFAULTS = {
     "require_opencode": True,
     "opencode_url": "https://models.opencode.ai/experimental/v2.0/api.json",
     "opencode_timeout_ms": 8000,
+    # opencode 延迟上限：超过它算「通但太慢」，不再当最优（0=关闭）
+    "max_opencode_ms": 1500,
     # 万一所有节点都过不了 opencode 检测，是否退回「只按延迟」择优
     "opencode_fallback": True,
+    # 刚切换过多久之内，容忍「延迟偏高」这种小波动（毫秒，0=关闭）
+    # 超时 / opencode 不通 不受此限制，照切
+    "switch_cooldown_ms": 600000,
 }
 
 # 这些不是真实节点，不参与择优
@@ -80,6 +86,25 @@ def log(msg):
         os.makedirs(os.path.dirname(LOG), exist_ok=True)
         with open(LOG, "a", encoding="utf-8") as f:
             f.write(line + "\n")
+    except OSError:
+        pass
+
+
+def load_state():
+    try:
+        with open(STATE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(**kw):
+    s = load_state()
+    s.update(kw)
+    try:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        with open(STATE, "w", encoding="utf-8") as f:
+            json.dump(s, f)
     except OSError:
         pass
 
@@ -244,8 +269,11 @@ def main():
         return 0
 
     max_delay = int(conf.get("max_delay_ms") or 0)
+    max_oc = int(conf.get("max_opencode_ms") or 0)
+    cooldown = int(conf.get("switch_cooldown_ms") or 0)
     delay_ok = cur_delay > 0 and (max_delay <= 0 or cur_delay <= max_delay)
-    oc_ok = (not require_oc) or cur_oc > 0
+    oc_ok = (not require_oc) or (
+        cur_oc > 0 and (max_oc <= 0 or cur_oc <= max_oc))
     if delay_ok and oc_ok and not args.force:
         extra = f"，opencode {cur_oc}ms" if require_oc else ""
         log(f"当前节点可用：{cur} ({cur_delay}ms{extra})，保持不变")
@@ -255,8 +283,20 @@ def main():
         reason = "超时"
     elif not delay_ok:
         reason = f"延迟过高({cur_delay}ms>{max_delay}ms)"
-    else:
+    elif require_oc and cur_oc <= 0:
         reason = f"opencode 不通(延迟 {cur_delay}ms 正常)"
+    elif require_oc and max_oc > 0 and cur_oc > max_oc:
+        reason = f"opencode 太慢({cur_oc}ms>{max_oc}ms)"
+    else:
+        reason = "手动强制重新择优"
+
+    # 刚切换过就只剩「延迟偏高」这一种小毛病时，先观察，别追着抖动切
+    if cooldown > 0 and not args.force and reason.startswith("延迟过高"):
+        waited = (time.time() - float(load_state().get("last_switch_ts", 0) or 0)) * 1000
+        if 0 <= waited < cooldown and cur_delay <= max(max_delay * 3, max_delay + 1):
+            log(f"当前节点延迟 {cur_delay}ms 偏高，但 {waited / 60000:.0f} 分钟前刚切过，先观察")
+            return 0
+
     log(f"当前节点{reason}：{cur}，开始测试全部节点")
     nodes = candidates(proxies, group)
     if not nodes:
@@ -274,19 +314,28 @@ def main():
         return oc if (require_oc and oc > 0) else d
 
     ok = sorted([(rank(d, oc), n) for n, d, oc in results
-                 if 0 < d < limit and (not require_oc or oc > 0)])
+                 if 0 < d < limit and (not require_oc or oc > 0)
+                 and (not require_oc or max_oc <= 0 or oc <= max_oc)])
+    loose = sorted([(rank(d, oc), n) for n, d, oc in results
+                    if 0 < d < limit and (not require_oc or oc > 0)])
     delay_only = sorted([(d, n) for n, d, oc in results if 0 < d < limit])
     slow = [n for n, d, oc in results if d >= limit]
     bad = [n for n, d, oc in results if d <= 0]
     oc_bad = [n for n, d, oc in results if d > 0 and require_oc and oc <= 0]
+    oc_slow = [n for n, d, oc in results
+               if d > 0 and require_oc and oc > 0 and max_oc > 0 and oc > max_oc]
     if require_oc:
-        log(f"测速完成：延迟<{limit}ms 且 opencode 可用 {len(ok)} / 共 {len(nodes)}"
-            f"（超时 {len(bad)}，过慢 {len(slow)}，opencode 不通 {len(oc_bad)}）")
+        log(f"测速完成：延迟<{limit}ms 且 opencode<{max_oc or '∞'}ms {len(ok)} / 共 {len(nodes)}"
+            f"（超时 {len(bad)}，过慢 {len(slow)}，opencode 不通 {len(oc_bad)}，"
+            f"opencode 太慢 {len(oc_slow)}）")
     else:
         log(f"测速完成：<{limit}ms 可用 {len(ok)} / 共 {len(nodes)}"
             f"（超时 {len(bad)}，过慢 {len(slow)}）")
 
-    if not ok and require_oc and conf.get("opencode_fallback") and delay_only:
+    if not ok and require_oc and loose:
+        log(f"警告：没有节点的 opencode 延迟低于 {max_oc}ms，退而求其次取最快的")
+        ok = loose
+    elif not ok and require_oc and conf.get("opencode_fallback") and delay_only:
         log("警告：没有节点能同时通过延迟和 opencode 检测，退回只按延迟择优")
         ok = delay_only
 
@@ -302,6 +351,10 @@ def main():
         + ", ".join(f"{n}={d}ms" for d, n in pool[:5]))
 
     best_delay, best = pool[0]
+    if best == cur and not args.force:
+        log(f"重新确认后仍用当前节点：{cur}，不切换")
+        return 0
+
     if conf.get("prefer_speed") and len(pool) > 1 and not args.dry_run:
         top = pool[:int(conf.get("speed_top") or 5)]
         log(f"实测下载速度（每次 {conf.get('speed_bytes')} 字节，最多测 {len(top)} 个）")
@@ -332,12 +385,18 @@ def main():
             bps, best, best_delay, _ = good[0]
             log(f"测速最优：{best} ({bps/1024:.0f} KB/s)")
 
+    if best == cur:
+        log(f"重新确认后仍用当前节点：{cur}，不切换")
+        return 0
+
     if args.dry_run:
         log(f"[dry-run] 将切换到 {best} ({best_delay}ms)，未做速度实测")
         return 0
 
     try:
         api.select(group, best)
+        save_state(last_switch_ts=time.time(), last_switch_node=best,
+                   last_switch_from=cur)
         log(f"已切换：{cur} → {best} ({best_delay}ms)")
     except Exception as e:
         log(f"切换失败：{e}")

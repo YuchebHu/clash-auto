@@ -68,7 +68,9 @@ export CLASH_CONFIG=/path/to/config.yaml
 | `require_opencode` | true | 是否启用 opencode 门禁 |
 | `opencode_url` | models.opencode.ai/…/api.json | opencode 探测目标 |
 | `opencode_timeout_ms` | 8000 | 探测超时 |
+| `max_opencode_ms` | 1500 | opencode 延迟上限，超过算「通但太慢」，不再当最优；`0` 关闭 |
 | `opencode_fallback` | true | 所有节点都过不了 opencode 时，是否退回只按延迟选 |
+| `switch_cooldown_ms` | 600000 | 刚切换过多久内容忍「延迟偏高」，只对延迟这一项生效 |
 | `prefer_multiplier` | 0.1 | 只在一折节点里挑（按节点名里的 `x倍率` 解析） |
 | `prefer_speed` | true | 决策前对候选做真实下载测速 |
 | `speed_top` | 5 | 只测速延迟最好的前 N 个 |
@@ -94,7 +96,24 @@ python3 ./opencode_panel.py
 
 ## 开机自启（可选）
 
-面板是个常驻进程。GNOME 下用 `opencode-check.desktop.example` 建一个 autostart 项：
+面板是个常驻进程，推荐用 systemd user 服务，进程挂了会自动拉起：
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp opencode-panel.service.example ~/.config/systemd/user/opencode-panel.service
+sed -i "s#/path/to/opencode_panel_start.sh#$PWD/opencode_panel_start.sh#" \
+  ~/.config/systemd/user/opencode-panel.service
+systemctl --user daemon-reload
+systemctl --user enable --now opencode-panel.service
+
+# 看日志 / 看状态
+journalctl --user -u opencode-panel -f
+systemctl --user status opencode-panel
+```
+
+启动包装脚本会先睡 10 秒，等客户端的 API 起来再开始扫描，避免开机时第一轮报「连不上」。
+
+没有 systemd 的桌面环境可以用 `opencode-check.desktop.example` 做 GNOME autostart：
 
 ```bash
 mkdir -p ~/.config/autostart
@@ -102,8 +121,6 @@ cp opencode-check.desktop.example ~/.config/autostart/opencode-check.desktop
 sed -i "s#/path/to/opencode_panel_start.sh#$PWD/opencode_panel_start.sh#" \
   ~/.config/autostart/opencode-check.desktop
 ```
-
-启动包装脚本会先睡 10 秒，等客户端的 API 起来再开始扫描，避免开机时第一轮报「连不上」。
 
 ## 定时运行
 
@@ -119,16 +136,29 @@ sed -i "s#/path/to/opencode_panel_start.sh#$PWD/opencode_panel_start.sh#" \
 当前节点
   ├─ 延迟超时 / > max_delay_ms      → 失效
   ├─ opencode 探测失败（重试 3 次） → 失效
+  ├─ opencode 延迟 > max_opencode_ms → 太慢，失效
   └─ 都通过                          → 保持不变，本轮结束
 失效后
   ├─ 并发探测所有真实节点（两个目标都测）
-  ├─ 淘汰延迟超时、过慢、opencode 不通的
+  ├─ 淘汰延迟超时、过慢、opencode 不通或太慢的
   ├─ 按 opencode 延迟排序，优先低倍率
+  ├─ 最优就是当前节点 → 直接结束，不做无意义的切换
   ├─ 对前 N 个做真实下载测速
   └─ 切到最快的那个；一个合格的都没有就不动
 ```
 
-重试机制是必要的：这类探测会假失败，同一个节点可能在几秒内两次结果相反，直接判死会导致无意义的频繁切换。
+三层兜底，避免「一个合格的都没有」时彻底不干活：
+
+1. 延迟达标且 `opencode <= max_opencode_ms` → 正常候选
+2. 都不达标但有节点 opencode 是通的 → 退而求其次，取最快的
+3. 连 opencode 都不通 → `opencode_fallback` 开启时按纯延迟选
+
+另外有两条防抖动机制：
+
+- **重试**：当前节点最多试 3 次（0 / 0.6 / 1.5s 间隔），这类探测假失败很常见
+- **冷却**：切换后 `switch_cooldown_ms` 内，只有「延迟偏高」会被容忍（且不超过 `max_delay_ms × 3`）；「超时」和「opencode 不通」照切不误
+
+最后一条来自实战：网络抖动时节点延迟会在 200ms 和 800ms 之间来回跳，没有冷却就会每三分钟切一次。
 
 ## 订阅更新后：clash_fix_profile.sh
 
